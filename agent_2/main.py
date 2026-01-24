@@ -30,6 +30,7 @@ load_dotenv()
 
 os.makedirs("logs", exist_ok=True)
 
+# A2A Communication Logger
 a2a_logger = logging.getLogger("a2a")
 a2a_logger.setLevel(logging.INFO)
 
@@ -40,6 +41,24 @@ formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 a2a_file_handler.setFormatter(formatter)
 
 a2a_logger.addHandler(a2a_file_handler)
+
+# Detailed Flow Logger (tracks everything)
+flow_logger = logging.getLogger("flow")
+flow_logger.setLevel(logging.INFO)
+
+flow_file_handler = logging.FileHandler("logs/detailed_flow.log")
+flow_file_handler.setLevel(logging.INFO)
+
+detailed_formatter = logging.Formatter('%(asctime)s | [%(name)s] | %(levelname)s | %(message)s')
+flow_file_handler.setFormatter(detailed_formatter)
+
+flow_logger.addHandler(flow_file_handler)
+
+# Also log to console
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(detailed_formatter)
+flow_logger.addHandler(console_handler)
 
 # ==============================================================================
 # FastAPI Application Setup
@@ -76,6 +95,7 @@ class A2AMessage(BaseModel):
     content: Dict[str, Any]
     role: str = "user"
     conversation_id: str
+    agent_id: Optional[str] = None  # Which agent sent this message
 
 class A2AResponse(BaseModel):
     content: Dict[str, Any]
@@ -272,35 +292,51 @@ async def fetch_agents_from_registry():
 # A2A Helper Functions
 # ==============================================================================
 
-async def send_message_to_agent(agent_id: str, message: str, conversation_id: str) -> str:
+async def send_message_to_agent(agent_id: str, message: str, conversation_id: str, from_agent_id: Optional[str] = None) -> str:
     if agent_id not in KNOWN_AGENTS:
-        return f"❌ Agent '{agent_id}' not found. Known agents: {list(KNOWN_AGENTS.keys())}"
+        error_msg = f"❌ Agent '{agent_id}' not found. Known agents: {list(KNOWN_AGENTS.keys())}"
+        flow_logger.error(f"SEND_FAILED | target={agent_id} | reason=not_found | conversation_id={conversation_id}")
+        return error_msg
     
     agent_url = KNOWN_AGENTS[agent_id]
     
+    flow_logger.info(f"📤 SENDING | to={agent_id} | url={agent_url} | conversation_id={conversation_id} | message_preview={message[:100]}...")
+    
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                agent_url,
-                json={
-                    "content": {
-                        "text": message,
-                        "type": "text"
-                    },
-                    "role": "user",
-                    "conversation_id": conversation_id
-                }
-            )
+        async with httpx.AsyncClient(timeout=120.0) as client:  # 2 minutes for CrewAI processing
+            payload = {
+                "content": {
+                    "text": message,
+                    "type": "text"
+                },
+                "role": "user",
+                "conversation_id": conversation_id
+            }
+            if from_agent_id:
+                payload["agent_id"] = from_agent_id
+                flow_logger.info(f"   └─ Including agent_id={from_agent_id} in payload")
+            
+            response = await client.post(agent_url, json=payload)
             response.raise_for_status()
             data = response.json()
-            return data.get("content", {}).get("text", str(data))
+            response_text = data.get("content", {}).get("text", str(data))
+            
+            flow_logger.info(f"✅ RECEIVED | from={agent_id} | conversation_id={conversation_id} | response_length={len(response_text)} chars | preview={response_text[:100]}...")
+            
+            return response_text
     
     except httpx.TimeoutException:
-        return f"❌ Timeout connecting to agent '{agent_id}'"
+        error_msg = f"❌ Timeout connecting to agent '{agent_id}'"
+        flow_logger.error(f"TIMEOUT | target={agent_id} | conversation_id={conversation_id}")
+        return error_msg
     except httpx.HTTPError as e:
-        return f"❌ Error communicating with agent '{agent_id}': {str(e)}"
+        error_msg = f"❌ Error communicating with agent '{agent_id}': {str(e)}"
+        flow_logger.error(f"HTTP_ERROR | target={agent_id} | error={str(e)} | conversation_id={conversation_id}")
+        return error_msg
     except Exception as e:
-        return f"❌ Unexpected error: {str(e)}"
+        error_msg = f"❌ Unexpected error: {str(e)}"
+        flow_logger.error(f"UNEXPECTED_ERROR | target={agent_id} | error={str(e)} | conversation_id={conversation_id}")
+        return error_msg
 
 def extract_agent_mentions(text: str) -> list[str]:
     pattern = r'@([\w-]+)'
@@ -520,31 +556,87 @@ async def a2a_endpoint(message: A2AMessage):
     try:
         text_content = message.content.get("text", "")
         conversation_id = message.conversation_id
+        from_agent = message.agent_id
         
-        a2a_logger.info(f"INCOMING | conversation_id={conversation_id} | message={text_content}")
+        flow_logger.info(f"{'='*80}")
+        flow_logger.info(f"📨 INCOMING MESSAGE | conversation_id={conversation_id}")
+        flow_logger.info(f"   └─ from_agent: {from_agent or 'external'}")
+        flow_logger.info(f"   └─ message: {text_content[:200]}...")
+        
+        a2a_logger.info(f"INCOMING | conversation_id={conversation_id} | from={from_agent} | message={text_content}")
         
         target_agent, clean_message = parse_a2a_request(text_content)
         
+        if target_agent:
+            flow_logger.info(f"🎯 ROUTING DETECTED | target=@{target_agent} | clean_message={clean_message[:100]}...")
+        
         if not target_agent:
-            error_msg = (
-                "❌ ERROR: /a2a endpoint requires @agent-id for routing.\n\n"
-                f"Your message: '{text_content}'\n\n"
-                "This endpoint is ONLY for agent-to-agent communication.\n"
-                "You must include @agent-id to route to another agent.\n\n"
-                "For direct robotics queries to THIS agent, use POST /query instead."
+            # No @agent-id - this message is FOR THIS AGENT to process
+            if not from_agent:
+                # No agent_id either - reject (must come from another agent)
+                error_msg = (
+                    "❌ ERROR: /a2a endpoint requires @agent-id for routing OR agent_id for processing.\n\n"
+                    f"Your message: '{text_content}'\n\n"
+                    "This endpoint is ONLY for agent-to-agent communication.\n"
+                    "You must include @agent-id to route to another agent.\n\n"
+                    "For direct robotics queries to THIS agent, use POST /query instead."
+                )
+                a2a_logger.error(f"NO_TARGET_NO_AGENT | conversation_id={conversation_id} | message={text_content}")
+                raise HTTPException(status_code=400, detail=error_msg)
+            
+            # Process locally and send response back to sender
+            print(f"💬 Processing message from @{from_agent}")
+            flow_logger.info(f"🤖 LOCAL PROCESSING | from=@{from_agent} | conversation_id={conversation_id}")
+            flow_logger.info(f"   └─ Task: Answer robotics question")
+            a2a_logger.info(f"LOCAL_PROCESSING | conversation_id={conversation_id} | from={from_agent} | message={text_content}")
+            
+            task = Task(
+                description=f"""
+                As a robotics expert, answer this question: {text_content}
+                
+                Use your robotics knowledge and tools to provide detailed technical information.
+                Include relevant details like specifications, design considerations, or implementation guidance.
+                Use your memory to recall previous robotics discussions and user projects.
+                """,
+                expected_output="Expert robotics guidance with technical details and practical recommendations",
+                agent=my_agent_twin,
             )
             
-            a2a_logger.error(f"NO_TARGET | conversation_id={conversation_id} | message={text_content}")
+            crew = Crew(
+                agents=[my_agent_twin],
+                tasks=[task],
+                memory=True,
+                verbose=True,  # Enable verbose to see tool usage
+            )
             
-            raise HTTPException(
-                status_code=400,
-                detail=error_msg
+            flow_logger.info(f"   └─ Starting CrewAI execution...")
+            result = crew.kickoff()
+            my_response = str(result.raw)
+            
+            # Response is sent back via HTTP return (not separate A2A message)
+            print(f"✅ Processed request from @{from_agent}")
+            flow_logger.info(f"✅ PROCESSING COMPLETE | response_length={len(my_response)} chars")
+            flow_logger.info(f"   └─ Response preview: {my_response[:200]}...")
+            a2a_logger.info(f"LOCAL_SUCCESS | conversation_id={conversation_id} | from={from_agent} | response_length={len(my_response)}")
+            
+            end_time = datetime.now()
+            
+            return A2AResponse(
+                content={
+                    "text": my_response,
+                    "type": "text"
+                },
+                role="assistant",
+                conversation_id=conversation_id,
+                timestamp=end_time.isoformat(),
+                agent_id=MY_AGENT_ID
             )
         
+        # Has @agent-id - route to another agent
         print(f"🔀 Routing message to agent: {target_agent}")
         a2a_logger.info(f"ROUTING | conversation_id={conversation_id} | target={target_agent} | message={clean_message}")
         
-        agent_response = await send_message_to_agent(target_agent, clean_message, conversation_id)
+        agent_response = await send_message_to_agent(target_agent, clean_message, conversation_id, from_agent_id=MY_AGENT_ID)
         
         response_text = f"[Forwarded to @{target_agent}]\n\n{agent_response}"
         
