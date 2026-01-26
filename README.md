@@ -89,7 +89,7 @@ Welcome to the MIT IAP NANDA course! Over 5 days, you'll progress from building 
 
 1. **Clone this repository:**
    ```bash
-   git clone <your-repo-url>
+   git clone <https://github.com/projnanda/5-day-course.git>
    cd CrewAI-nanda
    ```
 
