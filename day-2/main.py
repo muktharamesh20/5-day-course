@@ -1,3 +1,4 @@
+#!/Library/Frameworks/Python.framework/Versions/3.12/bin/python3
 """
 Personal Agent Twin with Memory and Tools - Day 2
 ==================================================
@@ -12,7 +13,7 @@ Students: Follow the steps to add memory and tools to your agent!
 
 from crewai import Agent, Task, Crew, LLM
 from crewai.tools import BaseTool
-from crewai_tools import DirectoryReadTool, FileReadTool, SerperDevTool, WebsiteSearchTool, YoutubeVideoSearchTool
+from crewai_tools import DirectoryReadTool, FileReadTool, SerperDevTool, WebsiteSearchTool, YoutubeVideoSearchTool, FirecrawlSearchTool, FirecrawlCrawlWebsiteTool, FirecrawlScrapeWebsiteTool, DallETool, PDFSearchTool
 from pydantic import BaseModel, Field
 from typing import Type
 from dotenv import load_dotenv
@@ -49,6 +50,15 @@ web_rag_tool = WebsiteSearchTool()
 # Searches within video transcripts
 youtube_tool = YoutubeVideoSearchTool()
 
+crawl_tool = FirecrawlCrawlWebsiteTool(url='firecrawl.dev')
+
+# Scrape single page
+scrape_tool = FirecrawlScrapeWebsiteTool(url='firecrawl.dev')
+
+# Search
+firecrawl_search_tool = FirecrawlSearchTool(query='what is firecrawl?')
+dalle_tool = DallETool(model="dall-e-3", size="1024x1024", quality="standard", n=1)
+pdf_tool = PDFSearchTool()
 # Tool 5: Web Search (requires SERPER_API_KEY in .env)
 # Get free key at: https://serper.dev
 search_tool = None
@@ -88,7 +98,12 @@ available_tools = [
     file_tool,
     web_rag_tool,
     youtube_tool,
-    calculator_tool
+    calculator_tool,
+    crawl_tool,
+    scrape_tool,
+    firecrawl_search_tool,
+    pdf_tool,
+    dalle_tool
 ]
 
 if search_tool:
@@ -104,11 +119,22 @@ my_agent_twin = Agent(
     You are the digital twin of a student learning AI and CrewAI.
     
     Here's what you know about me:
-    - I'm a student in the MIT IAP NANDA course
-    - I'm learning about AI agents, memory systems, and tools
-    - I love experimenting with new AI technologies
+    - My name is Muktha Ramesh
+    - I'm a student learning about AI agents and automation
+    - I'm interested in technology, coding, and building cool projects
+    - I love experimenting with new tools like CrewAI
     - My favorite programming language is Python
-    - I'm building this as part of a 5-day intensive course
+    - I enjoy problem-solving and creative thinking
+    - I'm a sophomore at MIT majoring in 6-3, which is Computer Science
+    - I've used n8n before, but I want to learn about agents and NADA
+    - My favorite color is blue, I am 19 and will turn 20 on Febuary 8th, I was born in 2006
+    - I think robots are cool
+    - My hometown is Rocky Hill Connecticut, where I went to Rocky Hill High School
+    - I have a younger sister whose 15 right now and is a sophomore in high school
+    - I live in Simmons Hall, which is a dorm room at MIT
+    - My favorite foods include brownies with ice cream, tacos, and chicken wings
+    - I also really like spicy food
+    - My favorite food place is Chipotle
     
     MEMORY CAPABILITIES:
     You have four types of memory:
@@ -136,9 +162,16 @@ my_agent_twin = Agent(
     - YoutubeVideoSearchTool: Search within video transcripts (RAG)
     - SerperDevTool: Web search (if API key configured)
     - Calculator: Perform mathematical calculations
+    - FirecrawlCrawlWebsiteTool: Crawl entire websites systematically, following links to specified depth. Converts pages to clean markdown.
+    - FirecrawlScrapeWebsiteTool: Scrape a single page and convert it to markdown or structured data. Supports LLM-based extraction with custom prompts/schemas.
+    - FirecrawlSearchTool: Search and extract specific content from websites using a query string.
+    - PDFTool: read pdfs
+    - DallE Tool: generate images
     
     Use tools when you need external information. Use memory to provide
     personalized, context-aware responses.
+
+    Use long term memory before you use tools for the web.  If you use firecrawl, please be very cautious about looping a lot.
     """,
     
     tools=available_tools,  # Add tools to agent
