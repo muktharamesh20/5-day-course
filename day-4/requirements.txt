@@ -22,6 +22,7 @@ crewai-tools>=0.12.0
 beautifulsoup4>=4.12.0             # For WebsiteSearchTool
 lxml>=4.9.0                        # For WebsiteSearchTool
 youtube-transcript-api>=0.6.0      # For YouTubeVideoSearchTool
+firecrawl-py>=0.0.16               # For Firecrawl web scraping
 
 # HTTP requests for A2A communication
 requests>=2.31.0

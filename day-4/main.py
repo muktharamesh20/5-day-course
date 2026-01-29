@@ -48,7 +48,7 @@ from typing import Optional, Dict, Any
 
 from crewai import Agent, Task, Crew, LLM
 from crewai.tools import BaseTool
-from crewai_tools import FileReadTool, SerperDevTool, WebsiteSearchTool, YoutubeVideoSearchTool
+from crewai_tools import DirectoryReadTool, FileReadTool, SerperDevTool, WebsiteSearchTool, YoutubeVideoSearchTool, FirecrawlSearchTool, FirecrawlCrawlWebsiteTool, FirecrawlScrapeWebsiteTool, DallETool, PDFSearchTool
 from pydantic import Field
 from typing import Type
 
@@ -163,11 +163,11 @@ KNOWN_AGENTS: Dict[str, str] = {
 # ==============================================================================
 # 👇 EDIT THESE VALUES - This is your agent's public information
 
-MY_AGENT_USERNAME = "personal-agent-twin"  # 👈 CHANGE THIS: Your unique username
-MY_AGENT_NAME = "Personal Agent Twin"      # 👈 CHANGE THIS: Human-readable name
-MY_AGENT_DESCRIPTION = "AI agent with memory and tools for research and assistance"  # 👈 CHANGE THIS
-MY_AGENT_PROVIDER = "NANDA Student"        # 👈 CHANGE THIS: Your name
-MY_AGENT_PROVIDER_URL = "https://nanda.mit.edu"  # 👈 CHANGE THIS: Your website
+MY_AGENT_USERNAME = "personal-agent-twin-MR"  # 👈 CHANGE THIS: Your unique username
+MY_AGENT_NAME = "Muktha's Personal Agent Twin"      # 👈 CHANGE THIS: Human-readable name
+MY_AGENT_DESCRIPTION = "AI agent with knowledge of me and tools to generate images and search the web and read pdfs."  # 👈 CHANGE THIS
+MY_AGENT_PROVIDER = "Muktha"        # 👈 CHANGE THIS: Your name
+MY_AGENT_PROVIDER_URL = "https://iapagent-production.up.railway.app"  # 👈 CHANGE THIS: Your website
 
 # Optional - usually don't need to change these
 MY_AGENT_ID = MY_AGENT_USERNAME  # Uses username as ID
@@ -215,12 +215,30 @@ search_tool = None
 if os.getenv('SERPER_API_KEY'):
     search_tool = SerperDevTool()
 
+crawl_tool = FirecrawlCrawlWebsiteTool(url='firecrawl.dev')
+
+# Scrape single page
+scrape_tool = FirecrawlScrapeWebsiteTool(url='firecrawl.dev')
+
+# Search
+firecrawl_search_tool = FirecrawlSearchTool(query='what is firecrawl?')
+dalle_tool = DallETool(model="dall-e-3", size="1024x1024", quality="standard", n=1)
+pdf_tool = PDFSearchTool()
+
+docs_tool = DirectoryReadTool(directory='./blog-posts')
+
 # Collect all tools
 available_tools = [
-    calculator_tool,
+    docs_tool,
     file_tool,
     web_rag_tool,
-    youtube_tool
+    youtube_tool,
+    calculator_tool,
+    crawl_tool,
+    scrape_tool,
+    firecrawl_search_tool,
+    pdf_tool,
+    dalle_tool
 ]
 
 if search_tool:
@@ -247,11 +265,22 @@ my_agent_twin = Agent(
     Your agent ID is: {MY_AGENT_ID}
     
     Here's what you know about me:
-    - I'm a student in the MIT IAP NANDA course
-    - I'm learning about AI agents, memory systems, and deployment
-    - I love experimenting with new AI technologies
+    - My name is Muktha Ramesh
+    - I'm a student learning about AI agents and automation
+    - I'm interested in technology, coding, and building cool projects
+    - I love experimenting with new tools like CrewAI
     - My favorite programming language is Python
-    - I'm building this as part of a 5-day intensive course
+    - I enjoy problem-solving and creative thinking
+    - I'm a sophomore at MIT majoring in 6-3, which is Computer Science
+    - I've used n8n before, but I want to learn about agents and NADA
+    - My favorite color is blue, I am 19 and will turn 20 on Febuary 8th, I was born in 2006
+    - I think robots are cool
+    - My hometown is Rocky Hill Connecticut, where I went to Rocky Hill High School
+    - I have a younger sister whose 15 right now and is a sophomore in high school
+    - I live in Simmons Hall, which is a dorm room at MIT
+    - My favorite foods include brownies with ice cream, tacos, and chicken wings
+    - I also really like spicy food
+    - My favorite food place is Chipotle
     
     MEMORY CAPABILITIES:
     You have four types of memory:
@@ -261,11 +290,17 @@ my_agent_twin = Agent(
     4. Contextual Memory: Combines all memory types
     
     TOOL CAPABILITIES:
-    - FileReadTool: Read files
-    - WebsiteSearchTool: Search websites (RAG)
-    - YoutubeVideoSearchTool: Search video transcripts (RAG)
+    - DirectoryReadTool: Browse and list files in directories
+    - FileReadTool: Read specific files
+    - WebsiteSearchTool: Search and extract content from websites (RAG)
+    - YoutubeVideoSearchTool: Search within video transcripts (RAG)
     - SerperDevTool: Web search (if API key configured)
-    - Calculator: Math operations
+    - Calculator: Perform mathematical calculations
+    - FirecrawlCrawlWebsiteTool: Crawl entire websites systematically, following links to specified depth. Converts pages to clean markdown.
+    - FirecrawlScrapeWebsiteTool: Scrape a single page and convert it to markdown or structured data. Supports LLM-based extraction with custom prompts/schemas.
+    - FirecrawlSearchTool: Search and extract specific content from websites using a query string.
+    - PDFTool: read pdfs
+    - DallE Tool: generate images
     
     A2A COMMUNICATION:
     You can communicate with other agents! When you see a message mentioning

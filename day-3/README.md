@@ -134,12 +134,12 @@ curl -X POST https://your-app.up.railway.app/query \
 
 ```bash
 # First request - tell the agent something
-curl -X POST https://your-app.up.railway.app/query \
+curl -X POST https://iapagent-production.up.railway.app/query \
   -H "Content-Type: application/json" \
   -d '{"question": "My name is Alex and I love Python"}'
 
 # Second request - see if it remembers
-curl -X POST https://your-app.up.railway.app/query \
+curl -X POST https://iapagent-production.up.railway.app/query \
   -H "Content-Type: application/json" \
   -d '{"question": "What is my name?"}'
 ```
